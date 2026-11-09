@@ -1,0 +1,58 @@
+name: Build RustCraft jar
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Download Forge MDK 1.20.1
+        run: |
+          curl -fL -o mdk.zip https://maven.minecraftforge.net/net/minecraftforge/forge/1.20.1-47.3.0/forge-1.20.1-47.3.0-mdk.zip
+          mkdir mdk
+          unzip -q mdk.zip -d mdk
+
+      - name: Insert mod sources
+        run: |
+          # берём termit-src.zip, а если его нет - любой другой *src.zip (самый новый)
+          ZIP=./termit-src.zip
+          [ -f "$ZIP" ] || ZIP=$(ls -1t ./*src.zip | head -n1)
+          echo "Using $ZIP"
+          unzip -q "$ZIP" -d modsrc
+          # ищем папку src/main в любом месте архива (и в корне, и внутри вложенной папки)
+          MAIN=$(find modsrc -type d -path '*/src/main' -not -path '*/__MACOSX/*' | head -n1)
+          [ -n "$MAIN" ] || { echo "В архиве нет src/main"; exit 1; }
+          SRC=$(dirname "$MAIN")
+          rm -rf mdk/src
+          cp -r "$SRC" mdk/src
+          cd mdk
+          sed -i 's/^mod_id=.*/mod_id=rustcraft/' gradle.properties
+          sed -i 's/^mod_name=.*/mod_name=RustCraft/' gradle.properties
+          sed -i 's/^mod_license=.*/mod_license=MIT/' gradle.properties
+          sed -i 's/^mod_version=.*/mod_version=1.0.0/' gradle.properties
+          sed -i 's/^mod_group_id=.*/mod_group_id=com.rustcraft/' gradle.properties
+          sed -i 's/^mod_authors=.*/mod_authors=RustCraft/' gradle.properties
+          sed -i 's/^mod_description=.*/mod_description=Rust mechanics in Minecraft/' gradle.properties
+          chmod +x gradlew
+
+      - name: Build
+        run: cd mdk && ./gradlew build --no-daemon
+
+      - name: Show built files
+        run: ls -la mdk/build/libs
+
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustcraft-jar
+          path: mdk/build/libs/rustcraft-1.0.0.jar
+          if-no-files-found: error
